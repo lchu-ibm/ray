@@ -24,6 +24,7 @@
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/synchronization/notification.h"
 #include "ray/common/id.h"
 #include "ray/common/status.h"
 #include "ray/object_manager/memory_object_reader.h"
@@ -193,8 +194,8 @@ class ObjectBufferPool {
   /// Other operations can wait on the std::condition_variable for the operation
   /// to complete. If successful, the corresponding entry in create_buffer_state_
   /// will be created.
-  absl::flat_hash_map<ray::ObjectID, std::shared_ptr<absl::CondVar>> create_buffer_ops_
-      GUARDED_BY(pool_mutex_);
+  absl::flat_hash_map<ray::ObjectID, std::shared_ptr<absl::Notification>>
+      create_buffer_ops_ GUARDED_BY(pool_mutex_);
   /// The state of a buffer that's currently being used.
   absl::flat_hash_map<ray::ObjectID, CreateBufferState> create_buffer_state_
       GUARDED_BY(pool_mutex_);

@@ -31,8 +31,8 @@ ObjectBufferPool::~ObjectBufferPool() {
   auto inflight_ops = create_buffer_ops_;
   pool_mutex_.Unlock();
 
-  for (const auto &[id, cond_var] : inflight_ops) {
-    cond_var->SignalAll();
+  for (const auto &[id, notif] : inflight_ops) {
+    notif->Notify();
   }
   auto no_inflight = [this]() {
     pool_mutex_.AssertReaderHeld();
@@ -176,50 +176,51 @@ ray::Status ObjectBufferPool::EnsureBufferExists(const ObjectID &object_id,
                                                  uint64_t data_size,
                                                  uint64_t metadata_size,
                                                  uint64_t chunk_index) {
-  // Buffer for object_id already exists.
-  if (create_buffer_state_.contains(object_id)) {
-    return ray::Status::OK();
-  }
-
-  auto it = create_buffer_ops_.find(object_id);
-  if (it != create_buffer_ops_.end()) {
-    auto cond_var = it->second;
-    // Release pool_mutex_ while waiting, until there is no inflight create buffer
-    // operation for the object.
-    while (create_buffer_ops_.contains(object_id)) {
-      cond_var->Wait(&pool_mutex_);
-    }
-    // Buffer already created.
+  while (true) {
+    // Buffer for object_id already exists.
     if (create_buffer_state_.contains(object_id)) {
       return ray::Status::OK();
     }
-    // Otherwise, previous create operation failed.
+
+    auto it = create_buffer_ops_.find(object_id);
+    if (it == create_buffer_ops_.end()) {
+      // No inflight create buffer operation, proceed to start one.
+      break;
+    }
+
+    auto notif = it->second;
+    // Release pool_mutex_ while waiting, until there is no inflight create buffer
+    // operation for the object.
+    notif->WaitForNotification();
   }
 
   // Indicate the inflight create buffer operation, by inserting into create_buffer_ops_.
-  create_buffer_ops_[object_id] = std::make_shared<absl::CondVar>();
-  const int64_t object_size = data_size - metadata_size;
+  RAY_CHECK(create_buffer_ops_.insert({object_id, std::make_shared<absl::Notification>()})
+                .second);
+  const int64_t object_size =
+      static_cast<int64_t>(data_size) - static_cast<int64_t>(metadata_size);
   std::shared_ptr<Buffer> data;
 
   // Release pool_mutex_ during the blocking create call.
   pool_mutex_.Unlock();
   Status s = store_client_.CreateAndSpillIfNeeded(
-      object_id, owner_address, object_size, nullptr, metadata_size, &data,
-      plasma::flatbuf::ObjectSource::ReceivedFromRemoteRaylet);
+      object_id, owner_address, static_cast<int64_t>(object_size), nullptr, metadata_size,
+      &data, plasma::flatbuf::ObjectSource::ReceivedFromRemoteRaylet);
   pool_mutex_.Lock();
 
   // No other thread could have created the buffer.
   RAY_CHECK(!create_buffer_state_.contains(object_id));
 
-  // Indicate the create operation for create_buffer_ops_ has finished.
-  it = create_buffer_ops_.find(object_id);
-  auto cond_var = it->second;
+  // Remove op from create_buffer_ops_, to indicate the create buffer operation has
+  // finished. Also notify waiting ops to either start another create buffer op, or
+  // proceed after the buffer has been created.
+  auto it = create_buffer_ops_.find(object_id);
+  it->second->Notify();
   create_buffer_ops_.erase(it);
 
   if (!s.ok()) {
     // Create failed. Buffer creation will be tried by another chunk.
     // And this chunk will eventually make it here via retried pull requests.
-    cond_var->SignalAll();
     return ray::Status::IOError(s.message());
   }
 
@@ -234,7 +235,6 @@ ray::Status ObjectBufferPool::EnsureBufferExists(const ObjectID &object_id,
                  << " in plasma store, number of chunks: " << num_chunks
                  << ", chunk index: " << chunk_index;
 
-  cond_var->SignalAll();
   return ray::Status::OK();
 }
 
