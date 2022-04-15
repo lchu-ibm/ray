@@ -49,6 +49,8 @@ class WorkflowStepContext:
     for "G", "H".
     """
 
+    # Job ID
+    job_id: Optional[str] = None
     # ID of the workflow.
     workflow_id: Optional[str] = None
     # The storage of the workflow, used for checkpointing.
@@ -70,7 +72,7 @@ _context: Optional[WorkflowStepContext] = None
 
 @contextmanager
 def workflow_step_context(
-    workflow_id, storage_url, last_step_of_workflow=False
+    job_id, workflow_id, storage_url, last_step_of_workflow=False
 ) -> None:
     """Initialize the workflow step context.
 
@@ -83,7 +85,7 @@ def workflow_step_context(
     assert workflow_id is not None
     try:
         _context = WorkflowStepContext(
-            workflow_id, storage_url, last_step_of_workflow=last_step_of_workflow
+            job_id, workflow_id, storage_url, last_step_of_workflow=last_step_of_workflow
         )
         yield
     finally:
@@ -95,6 +97,7 @@ _sentinel = object()
 
 @contextmanager
 def fork_workflow_step_context(
+    job_id: Optional[str] = _sentinel,
     workflow_id: Optional[str] = _sentinel,
     storage_url: Optional[str] = _sentinel,
     workflow_scope: Optional[List[str]] = _sentinel,
@@ -114,6 +117,9 @@ def fork_workflow_step_context(
     assert workflow_id is not None
     try:
         _context = WorkflowStepContext(
+            job_id=original_context.job_id
+            if job_id is _sentinel
+            else job_id,
             workflow_id=original_context.workflow_id
             if workflow_id is _sentinel
             else workflow_id,

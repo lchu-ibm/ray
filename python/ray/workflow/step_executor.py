@@ -28,7 +28,7 @@ from ray.workflow.common import (
     WorkflowData,
     WorkflowStaticRef,
     asyncio_run,
-    CheckpointMode,
+    CheckpointMode, WorkflowLoggerAdapter,
 )
 
 if TYPE_CHECKING:
@@ -40,7 +40,8 @@ if TYPE_CHECKING:
 
 WaitResult = Tuple[List[Any], List[Workflow]]
 
-logger = logging.getLogger(__name__)
+
+logger = WorkflowLoggerAdapter(logging.getLogger(__name__), {})
 
 
 def _resolve_object_ref(ref: ObjectRef) -> Tuple[Any, ObjectRef]:
@@ -72,6 +73,7 @@ def _resolve_dynamic_workflow_refs(workflow_refs: "List[WorkflowRef]"):
     """
     workflow_manager = get_or_create_management_actor()
     context = workflow_context.get_workflow_step_context()
+    job_id = context.job_id
     workflow_id = context.workflow_id
     storage_url = context.storage_url
     workflow_ref_mapping = []
@@ -100,7 +102,7 @@ def _resolve_dynamic_workflow_refs(workflow_refs: "List[WorkflowRef]"):
                     f"Current step: '{current_step_id}'"
                 )
                 step_ref = recovery.resume_workflow_step(
-                    workflow_id, workflow_ref.step_id, storage_url, None
+                    job_id, workflow_id, workflow_ref.step_id, storage_url, None
                 ).persisted_output
                 output, _ = _resolve_object_ref(step_ref)
         workflow_ref_mapping.append(output)

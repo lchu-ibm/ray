@@ -1,6 +1,7 @@
 import base64
 import asyncio
 import json
+import logging
 
 from ray import cloudpickle
 from collections import deque
@@ -13,10 +14,13 @@ import unicodedata
 from dataclasses import dataclass
 
 import ray
+import ray.ray_constants as ray_constants
 from ray import ObjectRef
 from ray.util.annotations import PublicAPI
 
 # Alias types
+from ray.workflow import workflow_context
+
 Event = Any
 StepID = str
 WorkflowOutputType = ObjectRef
@@ -24,6 +28,15 @@ WorkflowOutputType = ObjectRef
 MANAGEMENT_ACTOR_NAMESPACE = "workflow"
 MANAGEMENT_ACTOR_NAME = "WorkflowManagementActor"
 STORAGE_ACTOR_NAME = "StorageManagementActor"
+
+
+class WorkflowLoggerAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        context = workflow_context.get_workflow_step_context()
+        if context is not None:
+            job_id = context.job_id
+            msg = msg + ray_constants.LOG_SUFFIX_WORKFLOW_JOB_ID + job_id
+        return msg, kwargs
 
 
 def asyncio_run(coro):

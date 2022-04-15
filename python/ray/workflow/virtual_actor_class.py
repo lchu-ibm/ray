@@ -552,8 +552,9 @@ class VirtualActor:
     def _actor_method_call(
         self, method_helper: _VirtualActorMethodHelper, args, kwargs
     ) -> "ObjectRef":
+        job_id = ray.get_runtime_context().job_id.hex()
         with workflow_context.workflow_step_context(
-            self._actor_id, self._storage.storage_url
+            job_id, self._actor_id, self._storage.storage_url
         ):
             wf = method_helper.step(*args, **kwargs)
             if method_helper.readonly:

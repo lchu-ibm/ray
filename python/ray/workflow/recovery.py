@@ -167,7 +167,7 @@ def _construct_resume_workflow_from_step(
 
 @ray.remote(num_returns=2)
 def _resume_workflow_step_executor(
-    workflow_id: str, step_id: "StepID", store_url: str, current_output: [ray.ObjectRef]
+    job_id: str, workflow_id: str, step_id: "StepID", store_url: str, current_output: [ray.ObjectRef]
 ) -> Tuple[ray.ObjectRef, ray.ObjectRef]:
     # TODO (yic): We need better dependency management for virtual actor
     # The current output will always be empty for normal workflow
@@ -188,7 +188,7 @@ def _resume_workflow_step_executor(
 
     if isinstance(r, Workflow):
         with workflow_context.workflow_step_context(
-            workflow_id, store.storage_url, last_step_of_workflow=True
+            job_id, workflow_id, store.storage_url, last_step_of_workflow=True
         ):
             from ray.workflow.step_executor import execute_workflow
 
@@ -199,6 +199,7 @@ def _resume_workflow_step_executor(
 
 
 def resume_workflow_step(
+    job_id: str,
     workflow_id: str,
     step_id: "StepID",
     store_url: str,
@@ -224,7 +225,7 @@ def resume_workflow_step(
         current_output = [current_output]
 
     persisted_output, volatile_output = _resume_workflow_step_executor.remote(
-        workflow_id, step_id, store_url, current_output
+        job_id, workflow_id, step_id, store_url, current_output
     )
     return WorkflowExecutionResult(persisted_output, volatile_output)
 

@@ -316,6 +316,16 @@ class LogMonitor:
                         file_info.task_name = next_line.split(
                             ray_constants.LOG_PREFIX_TASK_NAME, 1
                         )[1]
+                    elif ray_constants.LOG_SUFFIX_WORKFLOW_JOB_ID in next_line:
+                        next_line, job_id = next_line.split(
+                            ray_constants.LOG_SUFFIX_WORKFLOW_JOB_ID, 1
+                        )
+                        if job_id != file_info.job_id:
+                            flush()
+                            file_info.job_id = job_id
+                            lines_to_publish.append(next_line)
+                        else:
+                            lines_to_publish.append(next_line)
                     elif next_line.startswith(
                         "Windows fatal exception: access violation"
                     ):

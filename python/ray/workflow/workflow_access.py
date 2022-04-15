@@ -4,17 +4,18 @@ from typing import Any, Dict, List, Tuple, Optional, TYPE_CHECKING
 
 from dataclasses import dataclass
 import ray
-from ray.workflow import common
+from ray.workflow import common, workflow_context
 from ray.workflow import recovery
 from ray.workflow import storage
 from ray.workflow import workflow_storage
 from ray.util.annotations import PublicAPI
+from ray.workflow.common import WorkflowLoggerAdapter
 
 if TYPE_CHECKING:
     from ray.actor import ActorHandle
     from ray.workflow.common import StepID, WorkflowExecutionResult
 
-logger = logging.getLogger(__name__)
+logger = WorkflowLoggerAdapter(logging.getLogger(__name__), {})
 
 
 @PublicAPI(stability="beta")
@@ -158,7 +159,7 @@ class WorkflowManagementActor:
             return None
 
     def run_or_resume(
-        self, workflow_id: str, ignore_existing: bool = False
+        self, job_id: str, workflow_id: str, ignore_existing: bool = False
     ) -> "WorkflowExecutionResult":
         """Run or resume a workflow.
 
@@ -175,34 +176,36 @@ class WorkflowManagementActor:
             raise RuntimeError(
                 f"The output of workflow[id={workflow_id}] already exists."
             )
-        wf_store = workflow_storage.WorkflowStorage(workflow_id, self._store)
-        workflow_prerun_metadata = {"start_time": time.time()}
-        wf_store.save_workflow_prerun_metadata(workflow_prerun_metadata)
-        step_id = wf_store.get_entrypoint_step_id()
-        try:
-            current_output = self._workflow_outputs[workflow_id].output
-        except KeyError:
-            current_output = None
-        result = recovery.resume_workflow_step(
-            workflow_id, step_id, self._store.storage_url, current_output
-        )
-        latest_output = LatestWorkflowOutput(
-            result.persisted_output, workflow_id, step_id
-        )
-        self._workflow_outputs[workflow_id] = latest_output
-        logger.info(
-            f"run_or_resume: {workflow_id}, {step_id}," f"{result.persisted_output}"
-        )
-        self._step_output_cache[(workflow_id, step_id)] = latest_output
+        with workflow_context.workflow_step_context(job_id, workflow_id, self._store.storage_url):
+            wf_store = workflow_storage.WorkflowStorage(workflow_id, self._store)
+            workflow_prerun_metadata = {"start_time": time.time()}
+            wf_store.save_workflow_prerun_metadata(workflow_prerun_metadata)
 
-        wf_store.save_workflow_meta(
-            common.WorkflowMetaData(common.WorkflowStatus.RUNNING)
-        )
+            step_id = wf_store.get_entrypoint_step_id()
+            try:
+                current_output = self._workflow_outputs[workflow_id].output
+            except KeyError:
+                current_output = None
+            result = recovery.resume_workflow_step(
+                job_id, workflow_id, step_id, self._store.storage_url, current_output
+            )
+            latest_output = LatestWorkflowOutput(
+                result.persisted_output, workflow_id, step_id
+            )
+            self._workflow_outputs[workflow_id] = latest_output
+            logger.info(
+                f"run_or_resume: {workflow_id}, {step_id}," f"{result.persisted_output}"
+            )
+            self._step_output_cache[(workflow_id, step_id)] = latest_output
 
-        if workflow_id not in self._step_status:
-            self._step_status[workflow_id] = {}
-            logger.info(f"Workflow job [id={workflow_id}] started.")
-        return result
+            wf_store.save_workflow_meta(
+                common.WorkflowMetaData(common.WorkflowStatus.RUNNING)
+            )
+
+            if workflow_id not in self._step_status:
+                self._step_status[workflow_id] = {}
+                logger.info(f"Workflow job [id={workflow_id}] started.")
+            return result
 
     def gen_step_id(self, workflow_id: str, step_name: str) -> str:
         wf_store = workflow_storage.WorkflowStorage(workflow_id, self._store)
