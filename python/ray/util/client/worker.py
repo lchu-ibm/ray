@@ -56,8 +56,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-INITIAL_TIMEOUT_SEC = 5
-MAX_TIMEOUT_SEC = 30
+INITIAL_TIMEOUT_SEC = 50
+MAX_TIMEOUT_SEC = 300
 
 # The max amount of time an operation can run blocking in the server. This
 # allows for Ctrl-C of the client to work without explicitly cancelling server
