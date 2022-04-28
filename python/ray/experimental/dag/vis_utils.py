@@ -1,4 +1,11 @@
-from ray.experimental.dag import DAGNode
+from ray.experimental.dag import (
+    DAGNode,
+    InputNode,
+    InputAttributeNode,
+    FunctionNode,
+    ClassNode,
+    ClassMethodNode,
+)
 
 import os
 import tempfile
@@ -50,6 +57,22 @@ def get_nodes_and_edges(dag: DAGNode):
     return nodes, edges
 
 
+def get_node_shape(node: DAGNode):
+    if isinstance(node, (InputNode, InputAttributeNode)):
+        return "box"
+    else:
+        return "oval"
+
+
+def get_edge_label(src: DAGNode, dst: DAGNode):
+    if isinstance(src, InputNode) and isinstance(dst, InputAttributeNode):
+        return "input attribute"
+    elif isinstance(src, ClassNode) and isinstance(dst, ClassMethodNode):
+        return "class method"
+    else:
+        return ""
+
+
 def dag_to_dot(dag: DAGNode):
     """Create a Dot graph from dag.
 
@@ -66,19 +89,25 @@ def dag_to_dot(dag: DAGNode):
 
     graph = pydot.Dot(rankdir="LR")
 
-    # Step 1: generate unique name for each node in dag
+    # step 1: generate unique name for each node in dag
     nodes, edges = get_nodes_and_edges(dag)
     name_generator = DAGNodeNameGenerator()
     node_names = {}
     for node in nodes:
         node_names[node] = name_generator.get_node_name(node)
 
-    # Step 2: create graph with all the edges
+    # step 2: create graph
+    for node in nodes:
+        node_name = node_names[node]
+        node_shape = get_node_shape(node)
+        graph.add_node(pydot.Node(node_name, shape=node_shape))
     for edge in edges:
-        graph.add_edge(pydot.Edge(node_names[edge[0]], node_names[edge[1]]))
-    # if there is only one node
-    if len(nodes) == 1 and len(edges) == 0:
-        graph.add_node(pydot.Node(node_names[nodes[0]]))
+        src = edge[0]
+        dst = edge[1]
+        src_name = node_names[src]
+        dst_name = node_names[dst]
+        edge_label = get_edge_label(src, dst)
+        graph.add_edge(pydot.Edge(src_name, dst_name, label=edge_label))
 
     return graph
 
